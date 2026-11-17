@@ -29,7 +29,7 @@ Results land in `output/tracker.csv` (opens in Excel or Google Sheets) and a rea
 
 ### What onboarding asks
 
-1. **Keys.** Anthropic is required: it is the model that reads and scores every job. Apify is optional: it adds LinkedIn search for about US$0.02 per run. Without it, the agent scans only the company job boards you list, which are free.
+1. **Keys.** Anthropic is required: it is the model that reads and scores every job. Apify is optional: it adds LinkedIn search for about US$0.02 per run. Without it, the agent scans only the company job boards you list: reading those boards costs nothing, and you pay only the model's tokens.
 2. **Your search.** Target roles, minimum level, where you can work, minimum compensation, languages, hard blockers, soft "no" signals, and "magnets" (things that make you want to see a job anyway). Optionally, your CV as plain text.
 3. **Companies to watch.** Paste careers links; it detects Greenhouse, Lever, Ashby and Gem boards automatically.
 
@@ -88,7 +88,7 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 
 ## Cost and limits
 
-- About US$0.18 of Anthropic and US$0.02 of Apify per run. `max_spend_usd` in `profile/settings.json` caps the model spend per run (default US$1.50).
+- About US$0.18 of Anthropic and US$0.02 of Apify per run. Every posting the model reads costs tokens, whatever the source. Anthropic API usage is paid with prepaid credits in the Claude Console, separate from a Claude subscription; Max, Ultra and Team plans include monthly API credits you can link to it. `max_spend_usd` in `profile/settings.json` caps the model spend per run (default US$1.50).
 - LinkedIn search looks at the last week and is capped at 20 postings per run (`linkedin_cap`).
 - Uber runs its own careers site; it is supported as a source with `{"system": "uber", "slug": "<Country>"}` in `profile/sources.json`.
 - The agent never applies, never contacts anyone and never logs in to LinkedIn with your account.

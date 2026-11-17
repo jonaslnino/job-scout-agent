@@ -85,7 +85,7 @@ def as_text(value) -> str:
     return str(value or "")
 
 
-# ── Step 1 · Keys ─────────────────────────────────────────────────────────────
+# ── Step 1 · Keys ──
 
 def read_env() -> dict:
     env = {}
@@ -100,7 +100,7 @@ def read_env() -> dict:
 def setup_keys(answers: dict, interactive: bool) -> dict:
     env = read_env()
     if interactive:
-        print("\n── Step 1 of 3 · Keys ─────────────────────────────────────────────")
+        print("\n── Step 1 of 3 · Keys ──")
         print("Anthropic (required): the model that reads and scores every job.")
         print("  Get a key at https://console.anthropic.com → Settings → API keys.")
         print("  A typical run costs about US$0.20. You can cap it in profile/settings.json (max_spend_usd).")
@@ -111,7 +111,7 @@ def setup_keys(answers: dict, interactive: bool) -> dict:
         env["ANTHROPIC_API_KEY"] = key
 
         print("\nApify (optional): adds LinkedIn search, the biggest source of postings.")
-        print("  Without it, the agent scans only the company job boards you list (free).")
+        print("  Without it, the agent scans only the company job boards you list (no Apify cost; the model still uses tokens).")
         print("  Get a token at https://console.apify.com → Settings → Integrations. About US$0.02 per run.")
         current = env.get("APIFY_API_TOKEN", "")
         token = input(f"  APIFY_API_TOKEN [{'keep current' if current else 'empty to skip'}] > ").strip() or current
@@ -133,20 +133,20 @@ def setup_keys(answers: dict, interactive: bool) -> dict:
     return env
 
 
-# ── Step 2 · Profile questions ───────────────────────────────────────────────
+# ── Step 2 · Profile questions ──
 
 def ask_profile(answers: dict) -> dict:
-    print("\n── Step 2 of 3 · Your search ──────────────────────────────────────")
+    print("\n── Step 2 of 3 · Your search ──")
     print("Short answers are fine. Everything lands in profile/criteria.md, which you can edit later.")
     for key, question, help_text, default, kind in QUESTIONS:
         answers[key] = ask(question, help_text, as_text(answers.get(key, default)), kind)
     return answers
 
 
-# ── Step 3 · Companies ───────────────────────────────────────────────────────
+# ── Step 3 · Companies ──
 
 def ask_companies(answers: dict) -> dict:
-    print("\n── Step 3 of 3 · Companies to watch ───────────────────────────────")
+    print("\n── Step 3 of 3 · Companies to watch ──")
     print("Paste careers links one by one (empty line to finish). Supported: Greenhouse, Lever, Ashby, Gem.")
     print("  e.g. https://jobs.ashbyhq.com/openai · https://boards.greenhouse.io/stripe · https://jobs.lever.co/kavak")
     companies = dict(answers.get("companies", {}))
@@ -170,7 +170,7 @@ def ask_companies(answers: dict) -> dict:
     return answers
 
 
-# ── Writing the profile ──────────────────────────────────────────────────────
+# ── Writing the profile ──
 
 def bullets(items: list[str], empty: str = "None given.") -> str:
     return "\n".join(f"- {i}" for i in items) if items else f"- {empty}"
