@@ -89,7 +89,7 @@ LINKEDIN_CAP = int(SETTINGS.get("linkedin_cap", 20))   # max LinkedIn jobs per r
 LINKEDIN_WINDOW = "pastWeek"
 BOARDS_CAP = 20            # max board jobs sent to the model per run
 WEBSEARCH_CAP = 5          # open web searches, only to discover jobs outside your list of boards
-WEBFETCH_CAP = 8           # pages read with WebFetch (when a company has no API)
+WEBFETCH_EXTRA = 8         # pages read with WebFetch beyond your own list of careers pages
 
 STAMP = datetime.now().strftime("%Y%m%d-%H%M")
 LOG_PATH = FOLDER / "logs" / f"run-{STAMP}.md"
@@ -103,7 +103,9 @@ AGENT_CONFIG = FOLDER / ".claude-agent"
 AGENT_CONFIG.mkdir(exist_ok=True)
 AGENT_ENV = {"ANTHROPIC_API_KEY": ANTHROPIC_API_KEY, "CLAUDE_CONFIG_DIR": str(AGENT_CONFIG)}
 
-SOURCES = boards.load_sources()
+ALL_SOURCES = boards.load_sources()
+SOURCES = boards.boards(ALL_SOURCES)      # job boards with an API, scanned in code
+PAGES = boards.pages(ALL_SOURCES)         # any other careers page, read with WebFetch
 FILTERS = boards.Filters()
 SEEN = Seen()
 SKIP_SEEN = True
@@ -302,12 +304,16 @@ async def save_results(args: dict) -> dict:
     shown = [j for j in jobs if j["show"] and not (SKIP_SEEN and SEEN.seen(j["company"], j["title"], j["link"]))]
     hidden = [j for j in jobs if not j["show"]]
     for j in shown:
-        j["source"] = "LinkedIn" if str(j["id"]).upper().startswith("LI-") else "Board"
+        jid = str(j["id"]).upper()
+        j["source"] = "LinkedIn" if jid.startswith("LI-") else "Page" if jid.startswith("PAGE-") else "Board"
     written = output.append_tracker(shown, today, criteria_version())
     output.write_report(shown, hidden, REPORT_PATH, f"Job Scout run · {today}")
     run_record = {"stamp": STAMP, "date": today, "criteria": criteria_version(), "model": MODEL, "jobs": jobs}
     (FOLDER / "logs" / f"results-{STAMP}.json").write_text(json.dumps(run_record, ensure_ascii=False, indent=1),
                                                            encoding="utf-8")
+    # Jobs read from careers pages never went through a tool of ours: register them here.
+    state["delivered"] += [(j["company"], j["title"], j["link"], "page") for j in jobs
+                           if str(j["id"]).upper().startswith("PAGE-")]
     # Jobs only count as seen once saved: if the run crashes before, nothing is lost.
     new_seen = sum(SEEN.add(c, t, l, s, today) for c, t, l, s in state["delivered"])
     SEEN.save()
@@ -319,11 +325,12 @@ async def save_results(args: dict) -> dict:
 
 def build_server(use_linkedin: bool, use_boards: bool):
     """Register only this run's tools. A registered-but-forbidden tool still tempts the model to try it."""
-    own = ([search_linkedin] if use_linkedin else []) + ([scan_board] if use_boards else [])
+    own = ([search_linkedin] if use_linkedin else []) + ([scan_board] if use_boards and SOURCES else [])
     return create_sdk_mcp_server(name="jobs", tools=own + [read_job, save_results])
 
 
 # Hook: a guard that runs BEFORE every web tool call. The cap is set by code, not by the model.
+WEBFETCH_CAP = WEBFETCH_EXTRA + len(PAGES)
 WEB_CAPS = {"WebSearch": WEBSEARCH_CAP, "WebFetch": WEBFETCH_CAP}
 
 
@@ -348,10 +355,16 @@ def sources_block(use_linkedin: bool, use_boards: bool) -> str:
     if use_linkedin:
         parts.append(f"- search_linkedin: LinkedIn jobs via Apify, last week only. Use the LinkedIn keywords from the "
                      f"criteria. Budget: {LINKEDIN_CAP} jobs; split it in searches of 4 to 8, highest priority first.")
-    if use_boards:
+    if use_boards and PAGES:
+        listed = "\n".join(f"  - {k} ({v.get('priority', 'medium')}): {v['url']}" for k, v in PAGES.items())
+        parts.append(f"- Careers pages to read with WebFetch on EVERY run (they have no API). Apply the location\n"
+                     f"  and title rules of the criteria yourself; give their jobs ids PAGE-n and use the posting's\n"
+                     f"  own link. For PAGE-n jobs, read the full posting with WebFetch instead of read_job:\n{listed}")
+    if use_boards and SOURCES:
         parts.append(f"- scan_board: your MAIN source. Reads one company's board through its API, already filtered. "
-                     f"Budget: {BOARDS_CAP} jobs in total; start with high-priority boards, 2 to 4 jobs per board.\n"
-                     f"- WebSearch: only to discover jobs OUTSIDE the list of boards. Max {WEBSEARCH_CAP} searches.\n"
+                     f"Budget: {BOARDS_CAP} jobs in total; start with high-priority boards, 2 to 4 jobs per board.")
+    if use_boards:
+        parts.append(f"- WebSearch: only to discover jobs OUTSIDE the list of boards. Max {WEBSEARCH_CAP} searches.\n"
                      f"- WebFetch: reads a page when there is no API. Max {WEBFETCH_CAP} reads. If a page fails, move on.\n"
                      f"- Only the company's own pages or its ATS (Greenhouse, Ashby, Lever, Gem) count. NEVER use "
                      f"aggregators that repost jobs (Indeed, Glassdoor, Talent.com, Jooble and similar).")
@@ -402,7 +415,7 @@ Write every text field in {LANGUAGE}.
 async def run(use_linkedin: bool, use_boards: bool) -> None:
     native = ["WebSearch", "WebFetch"] if use_boards else []
     allowed = (["mcp__jobs__search_linkedin"] if use_linkedin else []) + (
-        ["mcp__jobs__scan_board"] if use_boards else []) + native + ["mcp__jobs__read_job", "mcp__jobs__save_results"]
+        ["mcp__jobs__scan_board"] if use_boards and SOURCES else []) + native + ["mcp__jobs__read_job", "mcp__jobs__save_results"]
     options = ClaudeAgentOptions(
         model=MODEL,
         system_prompt=build_prompt(use_linkedin, use_boards),
@@ -462,7 +475,7 @@ if __name__ == "__main__":
     a = parser.parse_args()
     SKIP_SEEN = not a.include_seen
     use_linkedin = a.sources in ("all", "linkedin") and bool(APIFY_API_TOKEN)
-    use_boards = a.sources in ("all", "boards") and bool(SOURCES)
+    use_boards = a.sources in ("all", "boards") and bool(SOURCES or PAGES)
     if a.sources == "linkedin" and not APIFY_API_TOKEN:
         sys.exit("LinkedIn needs APIFY_API_TOKEN in .env. Run `python onboard.py` to add it.")
     if not (use_linkedin or use_boards):

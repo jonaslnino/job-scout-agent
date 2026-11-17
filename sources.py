@@ -1,5 +1,8 @@
 """
-Job boards read through their public APIs (Greenhouse, Lever, Ashby, Gem, Uber).
+Job boards read through their public APIs (Greenhouse, Lever, Ashby, Gem).
+
+Any other careers page can be added as a "page": the agent reads it with WebFetch on every run
+instead of through an API (slower and less exact, but it works for any site).
 
 This is plain, deterministic Python, not part of the agent. It downloads a company's
 job list, normalizes it to one format and filters it by location and title using the
@@ -39,10 +42,21 @@ def detect_ats(url: str) -> tuple[str, str] | None:
 
 
 def load_sources() -> dict:
-    """{key: {"system": ..., "slug": ..., "priority": "high" | "medium"}}"""
+    """{key: {"system": ..., "slug": ..., "priority": "high" | "medium"}} for ATS boards, or
+    {key: {"system": "page", "url": ..., "priority": ...}} for any other careers page."""
     if not SOURCES_PATH.exists():
         return {}
     return json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
+
+
+def boards(sources: dict) -> dict:
+    """Sources with a public API (scanned in code)."""
+    return {k: v for k, v in sources.items() if v.get("system") in READERS}
+
+
+def pages(sources: dict) -> dict:
+    """Careers pages without an API (read by the agent with WebFetch)."""
+    return {k: v for k, v in sources.items() if v.get("system") == "page"}
 
 
 def _compile(words: list[str]) -> re.Pattern | None:
@@ -148,22 +162,7 @@ def _gem(slug):
                "description": unescape(j.get("content_plain") or "") or _plain(j.get("content"))}
 
 
-def _uber(country):
-    """Uber runs its own careers site. The slug is a country name, e.g. 'Mexico'."""
-    page, total = 1, 1
-    while page <= total:
-        d = _get_json(f"https://jobs.uber.com/api/jobs/search/?countries={country}&page={page}")
-        total = d.get("totalPages") or 1
-        for j in d["jobs"]:
-            places = [l.get("Address") or l.get("Country") or "" for l in j.get("Locations") or []]
-            url = next((u["Url"] for u in j.get("Urls") or [] if u.get("IsDefault")), "")
-            yield {"title": j["Title"], "location": " / ".join(places), "remote": bool(j.get("Remote")),
-                   "date": _date(j.get("DisplayDate")), "link": f"https://jobs.uber.com{url}",
-                   "description": _plain(j.get("Description"))}
-        page += 1
-
-
-READERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever, "gem": _gem, "uber": _uber}
+READERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever, "gem": _gem}
 
 
 def scan(key: str, sources: dict, filters: Filters) -> tuple[int, list[dict]]:
@@ -178,7 +177,9 @@ def scan(key: str, sources: dict, filters: Filters) -> tuple[int, list[dict]]:
 if __name__ == "__main__":
     # Quick check of your sources without spending anything: python sources.py
     srcs, flt = load_sources(), Filters()
-    for k in srcs:
+    for k, v in pages(srcs).items():
+        print(f"{k}: page, read by the agent on each run ({v['url']})")
+    for k in boards(srcs):
         try:
             total, ok = scan(k, srcs, flt)
             print(f"{k}: {total} jobs, {len(ok)} pass your filters")

@@ -56,7 +56,7 @@ Results land in `output/tracker.csv` (opens in Excel or Google Sheets) and a rea
 
 1. **Keys.** Anthropic is required: it is the model that reads and scores every job. Apify is optional: it adds LinkedIn search for about US$0.02 per run. Without it, the agent scans only the company job boards you list: reading those boards costs nothing, and you pay only the model's tokens.
 2. **Your search.** Target roles, minimum level, where you can work, minimum compensation, languages, hard blockers, soft "no" signals, and "magnets" (things that make you want to see a job anyway). Optionally, your CV as plain text.
-3. **Companies to watch.** Paste careers links; it detects Greenhouse, Lever, Ashby and Gem boards automatically.
+3. **Companies and sites to watch.** Paste careers links. Greenhouse, Lever, Ashby and Gem boards are detected and read through their API; any other careers page or job site is added as a page the agent reads on every run.
 
 It writes everything to `profile/` and `.env`, both git-ignored. Your criteria become `profile/criteria.md`: a plain document you can read and edit, and the agent's entire brief.
 
@@ -70,8 +70,8 @@ flowchart LR
     S[(seen.json<br/>+ tracker)] -->|skip what you saw| M
     C[criteria.md<br/>+ cv.md] --> M
     M -->|reads full postings,<br/>scores, explains| O[tracker.csv<br/>+ report.md]
-    O -->|your verdicts| E[measure.py]
-    E -->|patterns you see| C
+    O -->|you rate: High · Medium · Pass| E[learn.py]
+    E -->|proposes, you approve| C
 ```
 
 An agent is a loop: the model thinks, asks for a tool, observes the result, and repeats until it is done. The SDK runs that loop. This repo provides the instructions, the tools and the guardrails.
@@ -92,13 +92,24 @@ An agent is a loop: the model thinks, asks for a tool, observes the result, and 
 - **Limits live in code, not in the prompt.** Spend caps, per-source budgets and a pre-tool hook stop the run, whatever the model "wants". The agent can only use the tools registered for that run, and it refuses to run on anything but your API key.
 - **It brings options; you decide.** Every shown job gets two scores (fit: can you do it very well; interest: does it give you what you want), a recommendation, its gaps marked bridgeable or hard, and the main tradeoff. The recommendation is information, not a filter.
 - **Honesty rule.** Every reason cites the posting or the CV. If the posting doesn't say, the answer is "unknown", never a guess.
-- **No memory between runs, on purpose.** What it "learns" lives in `criteria.md`, a document you can read, edit and version. `seen.json` keeps it from showing you the same job twice.
+- **No hidden memory, on purpose.** What it learns lives in `criteria.md`, a document you can read, edit and version. `seen.json` keeps it from showing you the same job twice.
+
+## How it learns
+
+The agent recommends; you decide; it learns from your decisions.
+
+1. **It recommends.** Every job it shows comes with High, Medium or Pass, and the reasons.
+2. **You rate.** In `output/tracker.csv`, set `my_verdict` to High (apply now), Medium (maybe) or Pass, and add a few words in `my_note` when you can ("too junior", "love the company", "on-site only").
+3. **It finds the patterns.** `python learn.py` compares its recommendations with your verdicts: what you keep choosing, what you always pass on, where it over- or under-rated. It writes a proposal; nothing changes yet.
+4. **You approve.** `python learn.py --apply` adds those patterns to your criteria and bumps their version. The next run judges jobs with what it learned.
+
+Nothing is learned behind your back: every lesson is a line in `profile/criteria.md` that you can read, edit or delete. With Claude Code, just say "learn from my ratings".
 
 ## Measuring it
 
-A job agent is only useful if it catches the jobs you'd want. Mark `my_verdict` (yes / maybe / no) in the tracker and run `python measure.py`. It reports, per criteria version:
+A job agent is only useful if it catches the jobs you'd want. With your verdicts in the tracker, run `python measure.py`. It reports, per criteria version:
 
-- **Catch rate:** of the jobs you wanted, how many it recommended High or Medium.
+- **Catch rate:** of the jobs you rated High or Medium, how many it recommended High or Medium.
 - **Noise:** of the jobs you passed on, how many it recommended High.
 
 This is how I tuned it. Each version of my criteria was measured on postings I had already judged, and the rule was to test a new version on postings **not** used to write it; otherwise it just memorizes:
@@ -115,7 +126,7 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 
 - About US$0.18 of Anthropic and US$0.02 of Apify per run. Every posting the model reads costs tokens, whatever the source. Anthropic API usage is paid with prepaid credits in the Claude Console, separate from a Claude subscription; Max, Ultra and Team plans include monthly API credits you can link to it. `max_spend_usd` in `profile/settings.json` caps the model spend per run (default US$1.50).
 - LinkedIn search looks at the last week and is capped at 20 postings per run (`linkedin_cap`).
-- Uber runs its own careers site; it is supported as a source with `{"system": "uber", "slug": "<Country>"}` in `profile/sources.json`.
+- Careers pages without an API are read with WebFetch on every run: it works for any site, but it is slower and spends a few more tokens than a job board API.
 - The agent never applies, never contacts anyone and never logs in to LinkedIn with your account.
 
 ## Files
@@ -125,9 +136,10 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 | `CLAUDE.md` | Instructions for Claude Code to set it up and run it for you |
 | `onboard.py` | Setup: keys, questions, profile |
 | `agent.py` | The agent: tools, guardrails, prompt, loop |
-| `sources.py` | Job board readers and regex filters (`python sources.py` for a free check) |
+| `sources.py` | Job board readers, careers pages and regex filters (`python sources.py` for a free check) |
 | `seen.py` | Memory of jobs already seen |
 | `output.py` | Tracker CSV and Markdown report |
+| `learn.py` | Turns your ratings into proposed updates to your criteria |
 | `measure.py` | Catch rate and noise from your verdicts |
 | `examples/` | A sample answers file for non-interactive setup |
 

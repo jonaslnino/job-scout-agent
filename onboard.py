@@ -17,6 +17,7 @@ Run it again any time: it shows your current answers as defaults.
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -147,7 +148,8 @@ def ask_profile(answers: dict) -> dict:
 
 def ask_companies(answers: dict) -> dict:
     print("\n── Step 3 of 3 · Companies to watch ──")
-    print("Paste careers links one by one (empty line to finish). Supported: Greenhouse, Lever, Ashby, Gem.")
+    print("Paste careers links one by one (empty line to finish). Greenhouse, Lever, Ashby and Gem boards are read")
+    print("through their API (fast and exact); any other careers page is read by the agent on every run.")
     print("  e.g. https://jobs.ashbyhq.com/openai · https://boards.greenhouse.io/stripe · https://jobs.lever.co/kavak")
     companies = dict(answers.get("companies", {}))
     if companies:
@@ -157,14 +159,19 @@ def ask_companies(answers: dict) -> dict:
         if not url:
             break
         found = detect_ats(url)
-        if not found:
-            print("  Not a supported job board link. Look for a 'jobs.lever.co', 'greenhouse.io' or "
-                  "'jobs.ashbyhq.com' link on the company's careers page.")
-            continue
-        system, slug = found
+        if found:
+            system, slug = found
+            entry = {"system": system, "slug": slug}
+        else:
+            print("  No job board API found in that link (tip: many careers pages link to jobs.lever.co,")
+            print("  greenhouse.io or jobs.ashbyhq.com; that link is better). It can still be read as a page.")
+            slug = input("  Short name for this source (e.g. acme) > ").strip().lower().replace(" ", "-")
+            if not slug:
+                continue
+            system, entry = "page", {"system": "page", "url": url}
         priority = "high" if input(f"  {slug}: high priority? [y/N] > ").strip().lower().startswith(("y", "s")) \
             else "medium"
-        companies[slug.lower()] = {"system": system, "slug": slug, "priority": priority}
+        companies[slug.lower()] = {**entry, "priority": priority}
         print(f"  ✓ {slug} ({system}, {priority})")
     answers["companies"] = companies
     return answers
@@ -252,10 +259,14 @@ If a job has a strong magnet and only one soft "no", **show it** and explain the
 {bullets(a.get('target_roles', []))}
 
 ## What their past verdicts revealed
-Empty for now. After a few runs, mark `my_verdict` in output/tracker.csv, run `python measure.py`, and
-write here the patterns you see (what you keep choosing, what you always pass on). This is how the
-agent "learns": it has no memory between runs, only this file.
+{a.get('_learned') or LEARNED_PLACEHOLDER}
 """
+
+
+LEARNED_SECTION = "## What their past verdicts revealed"
+LEARNED_PLACEHOLDER = """Empty for now. This is how the agent learns: after a run, rate the jobs in output/tracker.csv
+(`my_verdict`: High / Medium / Pass, plus a few words in `my_note`), then run `python learn.py`. It proposes
+the patterns it sees for this section, and `python learn.py --apply` writes them here once you agree."""
 
 
 GENERIC_TITLE_WORDS = {"senior", "junior", "manager", "head", "lead", "director", "chief", "principal", "staff",
@@ -276,8 +287,16 @@ def title_keywords(roles: list[str]) -> list[str]:
 def write_profile(a: dict) -> None:
     PROFILE.mkdir(exist_ok=True)
     previous = json.loads(ANSWERS_PATH.read_text(encoding="utf-8")) if ANSWERS_PATH.exists() else {}
-    a["version"] = previous.get("version", 0) + 1
-    (PROFILE / "criteria.md").write_text(build_criteria(a), encoding="utf-8")
+    criteria_path = PROFILE / "criteria.md"
+    old_criteria = criteria_path.read_text(encoding="utf-8") if criteria_path.exists() else ""
+    # Re-running onboarding never erases what the agent learned, and never lowers the version.
+    m = re.search(r"\(v(\d+)", old_criteria.splitlines()[0]) if old_criteria else None
+    a["version"] = max(previous.get("version", 0), int(m.group(1)) if m else 0) + 1
+    i = old_criteria.find(LEARNED_SECTION)
+    learned = old_criteria[i + len(LEARNED_SECTION):].strip() if i >= 0 else ""
+    a["_learned"] = learned if learned and not learned.startswith("Empty for now") else ""
+    criteria_path.write_text(build_criteria(a), encoding="utf-8")
+    a.pop("_learned", None)
     places = (a.get("locations") or []) + (a.get("relocation") or [])
     filters = {"locations": places, "remote_ok": bool(a.get("remote_ok")),
                "remote_excluded_regions": a.get("remote_excluded_regions") or [],

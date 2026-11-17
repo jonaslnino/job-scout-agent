@@ -1,13 +1,13 @@
 """
 Is the agent showing you the right jobs? Compares its recommendations with your verdicts.
 
-1. Open output/tracker.csv and fill `my_verdict` for the jobs you reviewed: yes, maybe or no.
+1. Open output/tracker.csv and fill `my_verdict` for the jobs you reviewed: High, Medium or Pass.
 2. Run: python measure.py
 
 It reports two numbers, the same ones used to tune this agent while building it:
-- Catch rate: of the jobs you wanted (yes/maybe), how many the agent recommended High or Medium.
+- Catch rate: of the jobs you wanted (High/Medium), how many the agent recommended High or Medium.
   This is the number that matters: a missed job you'd want is the costly mistake.
-- Noise: of the jobs you passed on (no), how many the agent recommended High.
+- Noise: of the jobs you passed on (Pass), how many the agent recommended High.
 
 When you change profile/criteria.md, bump its version and compare runs by `criteria_version`.
 Measure a new version on jobs you did NOT use to write it; otherwise it just memorizes.
@@ -17,14 +17,14 @@ from collections import defaultdict
 
 import output
 
-WANTED = {"yes", "y", "maybe", "m", "si", "sí"}
-PASSED = {"no", "n"}
+WANTED = {"high", "medium", "yes", "maybe", "alta", "media"}
+PASSED = {"pass", "no", "descartado"}
 
 
 def main() -> None:
     rows = [r for r in output.read_tracker() if (r.get("my_verdict") or "").strip()]
     if not rows:
-        print("No verdicts yet. Fill `my_verdict` (yes / maybe / no) in output/tracker.csv first.")
+        print("No verdicts yet. Fill `my_verdict` (High / Medium / Pass) in output/tracker.csv first.")
         return
     by_version = defaultdict(list)
     for r in rows:

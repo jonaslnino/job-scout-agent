@@ -61,12 +61,15 @@ If they have an answer that fits nowhere, put it in the closest list in their ow
 Ask them to drop or point to their CV (PDF, DOCX or text). Convert it to plain Markdown and save it as
 `profile/cv.md`. Keep their wording; don't improve or summarize it.
 
-### 5. Companies to watch
-Ask for 3 to 10 companies they'd like to work for. For each one, find the careers link that lives on
-Greenhouse, Lever, Ashby or Gem (the company's careers page usually links to it; search if needed). Check it with
-`<venv-python> -c "from sources import detect_ats; print(detect_ats('<link>'))"` and store each one in
-`companies` as `{"<slug lowercase>": {"system": ..., "slug": ..., "priority": "high" | "medium"}}`, asking
-which ones are high priority. If a company uses another system, tell them it isn't supported yet and skip it.
+### 5. Companies and sites to watch
+Ask for 3 to 10 companies they'd like to work for, and any job sites they check regularly. For each company,
+look for a careers link on Greenhouse, Lever, Ashby or Gem (the careers page usually links to it; search if
+needed) and check it with `<venv-python> -c "from sources import detect_ats; print(detect_ats('<link>'))"`.
+- Found: store `{"<slug lowercase>": {"system": ..., "slug": ..., "priority": "high" | "medium"}}` in `companies`.
+- Not found, or a job site: store it as a page the agent reads on every run:
+  `{"<short name>": {"system": "page", "url": "<careers or listing URL>", "priority": ...}}`.
+  Tell them pages are slower and cost a few more tokens than boards with an API.
+Ask which ones are high priority.
 
 ### 6. Build the profile and check it for free
 - Run `<venv-python> onboard.py --answers profile/answers.json`.
@@ -81,16 +84,20 @@ Ask for a clear OK before running, because it spends their credits (about US$0.2
 have no Apify token). It takes 3 to 5 minutes. When it ends, read the newest `output/report-*.md` and give them
 the top 3 with one line each, plus where the full report and `output/tracker.csv` are.
 
-Close by explaining, in two lines, how the agent gets better: mark `my_verdict` (yes / maybe / no) in the
-tracker, run `measure.py`, and adjust `profile/criteria.md`.
+Close by explaining, in two lines, how the agent learns: they rate each job in `output/tracker.csv`
+(`my_verdict`: High, Medium or Pass, plus a few words in `my_note`), and then say "learn from my ratings".
 
 ## If the profile exists: day-to-day
 
-- "Run it" / "find me jobs": ask for an OK (it costs credits), run `agent.py`, summarize the new report.
+- "Run it" / "find me jobs": ask for an OK (it costs credits), run `agent.py`, summarize the new report, and
+  offer to go through the jobs with them to rate each one (High / Medium / Pass and why).
 - "Change my criteria": edit `profile/criteria.md` directly, bump the version in its title, and update
   `profile/filters.json` if titles or locations changed.
+- "Learn from my ratings": if they rated in the chat instead of the CSV, write their verdicts and notes into
+  `output/tracker.csv` first. Run `<venv-python> learn.py`, show them the summary, and only with their OK run
+  `<venv-python> learn.py --apply`. If it says there are too few verdicts, help them rate more.
 - "How is it doing?": run `measure.py` and explain catch rate and noise in plain words.
-- "Add a company": same as step 5, then edit `profile/sources.json`.
+- "Add a company" or "watch this site": same as step 5, then edit `profile/sources.json`.
 
 ## Never
 - Print, log or commit API keys, or anything in `profile/`, `output/` or `.env`.

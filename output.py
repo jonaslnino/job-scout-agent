@@ -2,8 +2,9 @@
 Where results land: output/tracker.csv (one row per job shown, across all runs) and a
 readable Markdown report per run. The CSV opens in Excel or Google Sheets.
 
-You own two columns in the tracker: `my_verdict` (yes / maybe / no) and `status`.
-The agent never overwrites them; `measure.py` uses `my_verdict` to measure recall.
+You own three columns in the tracker: `my_verdict` (High / Medium / Pass), `my_note` (why, in a few
+words) and `status`. The agent never overwrites them. `learn.py` learns from your verdicts and notes;
+`measure.py` uses the verdicts to check whether the agent is getting better.
 """
 
 import csv
@@ -15,7 +16,7 @@ TRACKER_PATH = OUTPUT / "tracker.csv"
 
 COLUMNS = ["date_found", "company", "title", "link", "location", "work_mode", "salary",
            "recommendation", "fit", "interest", "summary", "why", "fit_notes", "gaps", "level",
-           "tradeoff", "source", "criteria_version", "my_verdict", "status"]
+           "tradeoff", "source", "criteria_version", "my_verdict", "my_note", "status"]
 
 
 def read_tracker() -> list[dict]:
@@ -35,7 +36,7 @@ def append_tracker(jobs: list[dict], date: str, criteria_version: str) -> int:
             w.writeheader()
         for j in jobs:
             w.writerow({**j, "date_found": date, "criteria_version": criteria_version,
-                        "my_verdict": "", "status": "to review"})
+                        "my_verdict": "", "my_note": "", "status": "to review"})
     return len(jobs)
 
 
