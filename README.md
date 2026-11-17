@@ -12,17 +12,40 @@ Job boards are noisy. The roles worth your time are spread across company career
 
 The agent reads the full posting, judges it the way you would, and tells you why. The design rule that shaped everything: **hiding a job you would want is the expensive mistake; showing you one you dismiss in ten seconds is cheap.** So it filters with "when in doubt, show", and leaves the decision to you.
 
-## Quick start
+## Easiest: let Claude set it up
+
+No terminal needed. Open this folder with [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and say:
+
+> Set this up for me.
+
+Claude follows [CLAUDE.md](CLAUDE.md): it installs what's needed, asks you about your search in a short conversation, turns your CV into plain text, finds the job boards of the companies you name, checks everything for free, and asks for your OK before the first paid run. Your API key goes straight into a local file, never through the chat.
+
+## Quick start (terminal)
+
+macOS / Linux:
 
 ```bash
 git clone https://github.com/jonaslnino/job-scout-agent.git
 cd job-scout-agent
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 
-python onboard.py    # ~10 minutes: keys, your criteria, companies to watch
-python sources.py    # free check: how many jobs each board has and how many pass your filters
-python agent.py      # first run
+.venv/bin/python onboard.py    # ~10 minutes: keys, your criteria, companies to watch
+.venv/bin/python sources.py    # free check: how many jobs each board has and how many pass your filters
+.venv/bin/python agent.py      # first run
+```
+
+Windows (PowerShell): use the `py` launcher, since `python` is often a Microsoft Store shortcut, and call the environment's Python with `.\`:
+
+```powershell
+git clone https://github.com/jonaslnino/job-scout-agent.git
+cd job-scout-agent
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+.\.venv\Scripts\python.exe onboard.py
+.\.venv\Scripts\python.exe sources.py
+.\.venv\Scripts\python.exe agent.py
 ```
 
 Results land in `output/tracker.csv` (opens in Excel or Google Sheets) and a readable report per run, `output/report-*.md`.
@@ -97,6 +120,7 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 
 | File | What it is |
 |---|---|
+| `CLAUDE.md` | Instructions for Claude Code to set it up and run it for you |
 | `onboard.py` | Setup: keys, questions, profile |
 | `agent.py` | The agent: tools, guardrails, prompt, loop |
 | `sources.py` | Job board readers and regex filters (`python sources.py` for a free check) |
