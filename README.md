@@ -14,11 +14,13 @@ The agent reads the full posting, judges it the way you would, and tells you why
 
 ## Easiest: let Claude set it up
 
-No terminal needed. Open this folder with [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and say:
+No terminal and no coding. You need [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and an Anthropic API key.
 
-> Set this up for me.
-
-Claude follows [CLAUDE.md](CLAUDE.md): it installs what's needed, asks you about your search in a short conversation, turns your CV into plain text, finds the job boards of the companies you name, checks everything for free, and asks for your OK before the first paid run. Your API key goes straight into a local file, never through the chat.
+1. **Get the code.** On this page, click the green **Code** button → **Download ZIP**, and unzip it wherever you like. (If you use git: `git clone https://github.com/jonaslnino/job-scout-agent.git`.) You don't need to create a new project: this folder is the project.
+2. **Open the folder in Claude Code.** In the Claude desktop app, open Claude Code and choose the folder you just unzipped (from the ZIP it is called `job-scout-agent-main`). From a terminal, go into the folder and type `claude`.
+3. **Say: "Set this up for me."** Claude follows [CLAUDE.md](CLAUDE.md): it installs what's needed and asks about your search in a short conversation.
+4. **Paste your API key when Claude asks.** It creates a `.env` file for you to paste the key into, so the key never goes through the chat.
+5. **Review and run.** Claude turns your CV into plain text, finds the job boards of the companies you name, checks everything for free, and asks for your OK before the first paid run (about US$0.20).
 
 ## Quick start (terminal)
 
