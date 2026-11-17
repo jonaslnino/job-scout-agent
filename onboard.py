@@ -33,14 +33,15 @@ ANSWERS_PATH = PROFILE / "answers.json"
 DEFAULT_TITLE_EXCLUDED = ["intern", "internship", "trainee", "analyst", "associate", "engineer", "developer",
                           "designer", "recruiter", "assistant", "coordinator", "support", "scientist"]
 
-# (key, question, help text, default, kind) — kind: text | list | yesno
+# (key, question, help text, default, kind). kind: text | list | yesno
 QUESTIONS = [
     ("language", "In which language should the agent write its reports?", "", "English", "text"),
     ("summary", "Describe yourself in one line, the way you'd open a cover letter.",
      "e.g. 'Strategy & Operations leader, 12+ years in marketplaces, led teams of 8, P&L across 7 countries.'",
      "", "text"),
     ("target_roles", "Which job titles are you after? (comma-separated)",
-     "e.g. Head of Strategy & Operations, Senior Manager Marketplace, Product Lead. These drive search and filters.",
+     "e.g. Head of Strategy & Operations, Senior Manager Marketplace, Product Lead. These drive the search: the "
+     "agent looks for these roles across many companies, not only the ones you list.",
      "", "list"),
     ("level", "What's the minimum level you'd take, and what feels too junior?",
      "e.g. 'Senior Manager or above, leading a team. Too junior: asks for 5 years or less.'", "", "text"),
@@ -61,6 +62,9 @@ QUESTIONS = [
      "e.g. companies you admire, relocation to Tokyo, building with AI, owning a P&L", "", "list"),
     ("title_excluded", "Title words that mean 'skip without reading'? (comma-separated)",
      "Applied by a free regex before the model sees anything.", ", ".join(DEFAULT_TITLE_EXCLUDED), "list"),
+    ("example_jobs", "Do you have 1 to 3 job postings you'd love? Paste links or 'title at company' (comma-separated, "
+     "empty to skip)", "They calibrate the agent: it looks for more like them. Say what you like about each if you can.",
+     "", "list"),
     ("cv_path", "Path to your CV as a .md or .txt file (empty to skip)",
      "Export your CV to plain text first. Strongly recommended: it is what the fit score reads.", "", "text"),
 ]
@@ -104,7 +108,7 @@ def setup_keys(answers: dict, interactive: bool) -> dict:
         print("\n── Step 1 of 3 · Keys ──")
         print("Anthropic (required): the model that reads and scores every job.")
         print("  Get a key at https://console.anthropic.com → Settings → API keys.")
-        print("  A typical run costs about US$0.20. You can cap it in profile/settings.json (max_spend_usd).")
+        print("  A typical run costs around US$0.40. You can cap it in profile/settings.json (max_spend_usd).")
         current = env.get("ANTHROPIC_API_KEY", "")
         key = input(f"  ANTHROPIC_API_KEY{' [keep current]' if current else ''} > ").strip() or current
         while not key.startswith("sk-ant-"):
@@ -112,7 +116,7 @@ def setup_keys(answers: dict, interactive: bool) -> dict:
         env["ANTHROPIC_API_KEY"] = key
 
         print("\nApify (optional): adds LinkedIn search, the biggest source of postings.")
-        print("  Without it, the agent scans only the company job boards you list (no Apify cost; the model still uses tokens).")
+        print("  Without it, the agent searches the web by role and reads public job boards (no Apify cost; the model still uses tokens).")
         print("  Get a token at https://console.apify.com → Settings → Integrations. About US$0.02 per run.")
         current = env.get("APIFY_API_TOKEN", "")
         token = input(f"  APIFY_API_TOKEN [{'keep current' if current else 'empty to skip'}] > ").strip() or current
@@ -147,8 +151,9 @@ def ask_profile(answers: dict) -> dict:
 # ── Step 3 · Companies ──
 
 def ask_companies(answers: dict) -> dict:
-    print("\n── Step 3 of 3 · Companies to watch ──")
-    print("Paste careers links one by one (empty line to finish). Greenhouse, Lever, Ashby and Gem boards are read")
+    print("\n── Step 3 of 3 · Companies and job sites to watch (optional) ──")
+    print("The agent already searches by role across many companies. Add companies or job sites you want checked")
+    print("on every run anyway. Paste careers links one by one (empty line to finish). Greenhouse, Lever, Ashby and Gem boards are read")
     print("through their API (fast and exact); any other careers page is read by the agent on every run.")
     print("  e.g. https://jobs.ashbyhq.com/openai · https://boards.greenhouse.io/stripe · https://jobs.lever.co/kavak")
     companies = dict(answers.get("companies", {}))
@@ -206,6 +211,9 @@ dismiss in 10 seconds is cheap.
 
 The title matters less than the mandate: a "Senior Manager" can have more scope than a "Head of".
 
+## Jobs they'd love (calibration: look for more like these)
+{bullets(a.get('example_jobs', []), 'None given yet.')}
+
 ## Level
 {a.get('level') or 'Not given.'}
 
@@ -255,7 +263,7 @@ If a job has a strong magnet and only one soft "no", **show it** and explain the
 - A bridgeable gap lowers the recommendation one step at most.
 - Honesty rule: every reason and gap cites the posting or the CV; if there's no data, say "unknown".
 
-## LinkedIn keywords (in priority order)
+## Role searches (in priority order; also try close synonyms of each)
 {bullets(a.get('target_roles', []))}
 
 ## What their past verdicts revealed
@@ -307,7 +315,8 @@ def write_profile(a: dict) -> None:
                                           encoding="utf-8")
     settings = json.loads((PROFILE / "settings.json").read_text(encoding="utf-8")) \
         if (PROFILE / "settings.json").exists() else {"model": "claude-sonnet-5-5", "max_spend_usd": 1.5,
-                                                     "linkedin_cap": 20}
+                                                     "linkedin_cap": 20, "role_searches": 10,
+                                                     "board_jobs_cap": 30}
     settings.update({"language": a.get("language") or "English",
                      "linkedin_location": a.get("linkedin_location", settings.get("linkedin_location", ""))})
     (PROFILE / "settings.json").write_text(json.dumps(settings, indent=1), encoding="utf-8")
@@ -336,10 +345,8 @@ def main() -> None:
     write_profile(answers)
 
     print("\n✓ Profile ready in profile/. Read profile/criteria.md once: it is the agent's whole brief.")
-    print("  Check your boards for free:  python sources.py")
+    print("  Check your list for free:    python sources.py")
     print("  First run:                   python agent.py")
-    if not answers.get("companies") and not read_env().get("APIFY_API_TOKEN"):
-        print("  ! You have no boards and no Apify token: the agent has nothing to search. Run onboarding again.")
 
 
 if __name__ == "__main__":

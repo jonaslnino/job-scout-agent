@@ -3,7 +3,7 @@ Where results land: output/tracker.csv (one row per job shown, across all runs) 
 readable Markdown report per run. The CSV opens in Excel or Google Sheets.
 
 You own three columns in the tracker: `my_verdict` (High / Medium / Pass), `my_note` (why, in a few
-words) and `status`. The agent never overwrites them. `learn.py` learns from your verdicts and notes;
+words) and `status`. The agent never overwrites them; `review.py` lets you fill them with one click. `learn.py` learns from your verdicts and notes;
 `measure.py` uses the verdicts to check whether the agent is getting better.
 """
 

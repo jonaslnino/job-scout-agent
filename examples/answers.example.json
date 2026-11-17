@@ -14,6 +14,7 @@
   "no_signals": ["account management", "FP&A as the main function"],
   "magnets": ["fintech", "building with AI", "owning a P&L"],
   "title_excluded": ["intern", "analyst", "associate", "engineer", "developer", "designer", "recruiter"],
+  "example_jobs": ["Head of Marketplace at a Series B fintech in Bogotá: owns supply and demand, hybrid"],
   "cv_path": "",
   "companies": {
     "rappi": {"system": "lever", "slug": "rappi", "priority": "high"},

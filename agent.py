@@ -14,9 +14,16 @@ The Claude Agent SDK runs that loop for us. Our job is to:
     - put hard limits in code (budgets, allowed tools), not in the model's good will,
     - and log every step so you can see what it did and what it cost.
 
-Usage (after `python onboard.py`):
-    python agent.py                     # boards + LinkedIn (if you set up Apify)
-    python agent.py --sources boards    # only company job boards (free besides the model)
+Where it looks, in this order:
+    1. By ROLE: web searches for your target titles on public job boards (Greenhouse, Lever, Ashby, Gem)
+       and on the job sites you chose. When it finds a posting on a board, it reads that company's whole
+       board through its API. Companies it discovers this way are saved to output/discovered.json.
+    2. LinkedIn, if you set up Apify.
+    3. Your own list of companies and careers pages, as a complement.
+
+Usage (after onboarding):
+    python agent.py                     # everything enabled
+    python agent.py --sources web       # role search + your list, no LinkedIn
     python agent.py --include-seen      # show jobs you already saw (for experiments)
 """
 
@@ -87,9 +94,11 @@ LINKEDIN_ACTOR = "curious_coder/linkedin-jobs-scraper"
 LINKEDIN_LOCATION = SETTINGS.get("linkedin_location", "")
 LINKEDIN_CAP = int(SETTINGS.get("linkedin_cap", 20))   # max LinkedIn jobs per run (each one costs money)
 LINKEDIN_WINDOW = "pastWeek"
-BOARDS_CAP = 20            # max board jobs sent to the model per run
-WEBSEARCH_CAP = 5          # open web searches, only to discover jobs outside your list of boards
+BOARDS_CAP = int(SETTINGS.get("board_jobs_cap", 30))        # max board jobs sent to the model per run
+WEBSEARCH_CAP = int(SETTINGS.get("role_searches", 10))       # web searches by role: the main way to find jobs
 WEBFETCH_EXTRA = 8         # pages read with WebFetch beyond your own list of careers pages
+MAX_PER_COMPANY = 3        # jobs per company sent to the model: keeps the run about roles, not a few companies
+DISCOVERED_PATH = output.OUTPUT / "discovered.json"
 
 STAMP = datetime.now().strftime("%Y%m%d-%H%M")
 LOG_PATH = FOLDER / "logs" / f"run-{STAMP}.md"
@@ -112,7 +121,7 @@ SKIP_SEEN = True
 
 state = {"linkedin_jobs": 0, "apify_runs": 0, "apify_usd": 0.0, "linkedin_raw": [],
          "WebSearch": 0, "WebFetch": 0, "web_blocked": 0, "board_jobs": 0, "boards_scanned": [],
-         "board_raw": {}, "already_seen": 0, "delivered": []}
+         "board_raw": {}, "already_seen": 0, "delivered": [], "discovered": {}}
 
 
 def log(tag: str, text: str = "") -> None:
@@ -193,31 +202,47 @@ async def search_linkedin(args: dict) -> dict:
 
 @tool(
     "scan_board",
-    "Reads ONE company's job board through its public API (fresh data) and returns only the jobs that "
-    "pass your location and title filters. "
-    f"Boards available (priority): {', '.join(f'{k} ({v.get('priority', 'medium')})' for k, v in SOURCES.items()) or 'none'}. "
-    f"Total board budget: {BOARDS_CAP} jobs; split max_results across boards, starting with high priority.",
+    "Reads ONE company's job board through its public API (fresh data) and returns only the jobs that pass "
+    "the person's location and title filters. Pass either a job link you found with WebSearch on Greenhouse, "
+    "Lever, Ashby or Gem (any posting of that company works), or the name of a board on their own list: "
+    f"{', '.join(f'{k} ({v.get('priority', 'medium')})' for k, v in SOURCES.items()) or 'none'}. "
+    f"Total board budget: {BOARDS_CAP} jobs; at most {MAX_PER_COMPANY} per company.",
     {"board": str, "max_results": int},
 )
 async def scan_board(args: dict) -> dict:
-    key = args["board"].strip().lower()
-    if key not in SOURCES:
-        return text_result(f"Unknown board: {key}. Options: {', '.join(SOURCES)}", True)
+    ref = args["board"].strip()
+    run_sources = dict(SOURCES)
+    if "/" in ref:  # a link found while searching by role
+        found = boards.source_from_link(ref)
+        if not found:
+            return text_result("That link is not on Greenhouse, Lever, Ashby or Gem. Read it with WebFetch "
+                               "instead, or pass a board from the list.", True)
+        key, entry = found
+        if key not in SOURCES:
+            run_sources[key] = entry
+            state["discovered"].setdefault(key, entry)
+    else:
+        key = ref.lower()
+    if key not in run_sources:
+        return text_result(f"Unknown board: {key}. Pass a job link from Greenhouse, Lever, Ashby or Gem, "
+                           f"or one of: {', '.join(SOURCES) or 'none'}", True)
     if key in state["boards_scanned"]:
         return text_result(f"{key} was already scanned in this run.", True)
     left = BOARDS_CAP - state["board_jobs"]
     if left <= 0:
         return text_result(f"Board budget used up ({BOARDS_CAP}). Work with what you have.", True)
     try:
-        total, passed = await asyncio.to_thread(boards.scan, key, SOURCES, FILTERS)
+        total, passed = await asyncio.to_thread(boards.scan, key, run_sources, FILTERS)
     except Exception as e:
         return text_result(f"Error reading {key}: {type(e).__name__}: {e}", True)
 
     # Already-seen jobs are removed BEFORE choosing, so they don't eat the budget.
     new = [j for j in passed if not (SKIP_SEEN and SEEN.seen(j["company"], j["title"], j["link"]))]
     state["already_seen"] += len(passed) - len(new)
-    n = max(1, min(int(args.get("max_results", 5)), left))
+    n = max(1, min(int(args.get("max_results", MAX_PER_COMPANY)), left, MAX_PER_COMPANY))
     chosen = new[:n]
+    if key in state["discovered"]:
+        state["discovered"][key]["passing"] = len(passed)
     state["boards_scanned"].append(key)
     compact = []
     for j in chosen:
@@ -318,14 +343,30 @@ async def save_results(args: dict) -> dict:
     new_seen = sum(SEEN.add(c, t, l, s, today) for c, t, l, s in state["delivered"])
     SEEN.save()
     state["shown"] = written
+    save_discovered(today, {str(j["company"]).lower() for j in shown})
     log("   📥 SAVED", f"{written} jobs added to {output.TRACKER_PATH.name} · report: {REPORT_PATH.name} "
                      f"· {new_seen} new in seen.json")
     return text_result(f"Saved {written} jobs to the tracker and wrote {REPORT_PATH.name}.")
 
 
+def save_discovered(today: str, shown_companies: set) -> None:
+    """Companies found by searching by role, not on the person's list. Claude Code offers to add the good ones."""
+    if not state["discovered"]:
+        return
+    known = json.loads(DISCOVERED_PATH.read_text(encoding="utf-8")) if DISCOVERED_PATH.exists() else {}
+    for key, entry in state["discovered"].items():
+        base = {k: v for k, v in entry.items() if k != "passing"}
+        row = known.setdefault(key, {**base, "first_seen": today, "runs": 0, "jobs_shown": 0})
+        row["runs"] += 1
+        row["last_seen"] = today
+        row["passing_filters"] = entry.get("passing", 0)
+        row["jobs_shown"] += int(key in shown_companies)
+    DISCOVERED_PATH.write_text(json.dumps(known, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def build_server(use_linkedin: bool, use_boards: bool):
     """Register only this run's tools. A registered-but-forbidden tool still tempts the model to try it."""
-    own = ([search_linkedin] if use_linkedin else []) + ([scan_board] if use_boards and SOURCES else [])
+    own = ([search_linkedin] if use_linkedin else []) + ([scan_board] if use_boards else [])
     return create_sdk_mcp_server(name="jobs", tools=own + [read_job, save_results])
 
 
@@ -352,22 +393,33 @@ async def cap_web(entry: dict, tool_use_id, context) -> dict:
 def sources_block(use_linkedin: bool, use_boards: bool) -> str:
     """Describe only the enabled tools. What is not mentioned, the model does not try."""
     parts = []
+    if use_boards:
+        sites = " OR ".join(f"site:{d}" for d in boards.ATS_DOMAINS)
+        parts.append(
+            f"- WebSearch, by ROLE: your MAIN source. The point is to find roles across many companies, including\n"
+            f"  ones the person has never heard of. Max {WEBSEARCH_CAP} searches. Build each one from a target role\n"
+            f"  (or a close synonym) plus a location or 'remote', restricted to public job boards, e.g.\n"
+            f"  \"<role>\" \"<city, country or remote>\" ({sites}). Vary roles and places across searches.\n"
+            f"- scan_board: when a search result is a posting on Greenhouse, Lever, Ashby or Gem, pass its link to\n"
+            f"  read that company's whole board, already filtered. Budget: {BOARDS_CAP} jobs, at most\n"
+            f"  {MAX_PER_COMPANY} per company. Spread the budget across many companies rather than a few.")
     if use_linkedin:
-        parts.append(f"- search_linkedin: LinkedIn jobs via Apify, last week only. Use the LinkedIn keywords from the "
+        parts.append(f"- search_linkedin: LinkedIn jobs via Apify, last week only. Use the role searches from the "
                      f"criteria. Budget: {LINKEDIN_CAP} jobs; split it in searches of 4 to 8, highest priority first.")
+    if use_boards and SOURCES:
+        parts.append(f"- Their own list of companies (a complement, after the role searches): pass the name to "
+                     f"scan_board. High priority first.")
     if use_boards and PAGES:
         listed = "\n".join(f"  - {k} ({v.get('priority', 'medium')}): {v['url']}" for k, v in PAGES.items())
-        parts.append(f"- Careers pages to read with WebFetch on EVERY run (they have no API). Apply the location\n"
-                     f"  and title rules of the criteria yourself; give their jobs ids PAGE-n and use the posting's\n"
-                     f"  own link. For PAGE-n jobs, read the full posting with WebFetch instead of read_job:\n{listed}")
-    if use_boards and SOURCES:
-        parts.append(f"- scan_board: your MAIN source. Reads one company's board through its API, already filtered. "
-                     f"Budget: {BOARDS_CAP} jobs in total; start with high-priority boards, 2 to 4 jobs per board.")
+        parts.append(f"- Careers pages and job sites they chose, to read with WebFetch on EVERY run (no API). Apply\n"
+                     f"  the location and title rules of the criteria yourself; give their jobs ids PAGE-n and use the\n"
+                     f"  posting's own link. For PAGE-n jobs, read the full posting with WebFetch instead of read_job:\n"
+                     f"{listed}")
     if use_boards:
-        parts.append(f"- WebSearch: only to discover jobs OUTSIDE the list of boards. Max {WEBSEARCH_CAP} searches.\n"
-                     f"- WebFetch: reads a page when there is no API. Max {WEBFETCH_CAP} reads. If a page fails, move on.\n"
-                     f"- Only the company's own pages or its ATS (Greenhouse, Ashby, Lever, Gem) count. NEVER use "
-                     f"aggregators that repost jobs (Indeed, Glassdoor, Talent.com, Jooble and similar).")
+        parts.append(f"- WebFetch: reads a page when there is no API. Max {WEBFETCH_CAP} reads. If a page fails, move on.\n"
+                     f"- Besides the job sites they chose, only the company's own pages or its ATS count. Don't use\n"
+                     f"  aggregators found by search that repost jobs (Indeed, Glassdoor, Talent.com, Jooble and\n"
+                     f"  similar): look for the original posting instead.")
     parts.append("- read_job: full description of a job you already found. Use it on EVERY finalist before evaluating.")
     return "\n".join(parts)
 
@@ -389,7 +441,8 @@ Write every text field in {LANGUAGE}.
 
 # Process
 1. Before each tool call, write ONE line: what you will do and why.
-2. Search with the enabled sources.
+2. Search with the enabled sources, roles first: several companies with one good job beat one company
+   with many.
 3. Merge everything and remove duplicates (same company + same role, even if the title changes slightly).
 4. Apply "Step 1 · Filter" from the criteria. Your job is to BRING options; the person decides. When in doubt, show.
 5. Read every job you will show with read_job and evaluate it with "Step 2 · Evaluation". Be honest, don't
@@ -415,7 +468,7 @@ Write every text field in {LANGUAGE}.
 async def run(use_linkedin: bool, use_boards: bool) -> None:
     native = ["WebSearch", "WebFetch"] if use_boards else []
     allowed = (["mcp__jobs__search_linkedin"] if use_linkedin else []) + (
-        ["mcp__jobs__scan_board"] if use_boards and SOURCES else []) + native + ["mcp__jobs__read_job", "mcp__jobs__save_results"]
+        ["mcp__jobs__scan_board"] if use_boards else []) + native + ["mcp__jobs__read_job", "mcp__jobs__save_results"]
     options = ClaudeAgentOptions(
         model=MODEL,
         system_prompt=build_prompt(use_linkedin, use_boards),
@@ -460,6 +513,7 @@ async def run(use_linkedin: bool, use_boards: bool) -> None:
                            "seconds": round(msg.duration_ms / 1000), "anthropic_usd": msg.total_cost_usd,
                            "apify_usd": round(state["apify_usd"], 4), "linkedin_jobs": state["linkedin_jobs"],
                            "board_jobs": state["board_jobs"], "boards_scanned": state["boards_scanned"],
+                           "discovered": sorted(state["discovered"]),
                            "skipped_already_seen": state["already_seen"], "shown": state.get("shown", 0),
                            "web_blocked_by_hook": state["web_blocked"], "ended": msg.subtype}
                 (FOLDER / "logs" / f"run-{STAMP}.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
@@ -470,16 +524,15 @@ async def run(use_linkedin: bool, use_boards: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Job Scout Agent")
-    parser.add_argument("--sources", choices=["all", "boards", "linkedin"], default="all")
+    parser.add_argument("--sources", choices=["all", "web", "boards", "linkedin"], default="all",
+                        help="web (= boards): role search + your list, without LinkedIn")
     parser.add_argument("--include-seen", action="store_true", help="don't skip jobs you already saw")
     a = parser.parse_args()
     SKIP_SEEN = not a.include_seen
     use_linkedin = a.sources in ("all", "linkedin") and bool(APIFY_API_TOKEN)
-    use_boards = a.sources in ("all", "boards") and bool(SOURCES or PAGES)
+    use_boards = a.sources in ("all", "web", "boards")
     if a.sources == "linkedin" and not APIFY_API_TOKEN:
         sys.exit("LinkedIn needs APIFY_API_TOKEN in .env. Run `python onboard.py` to add it.")
-    if not (use_linkedin or use_boards):
-        sys.exit("No sources enabled: add company boards or an Apify token with `python onboard.py`.")
 
     lock = FOLDER / "logs" / "running.lock"
     if lock.exists() and datetime.now().timestamp() - lock.stat().st_mtime < 2 * 3600:

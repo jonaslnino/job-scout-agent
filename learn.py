@@ -4,8 +4,9 @@ How the agent learns from you.
 The model has no memory between runs. What it "learns" lives in profile/criteria.md, under
 "What their past verdicts revealed". This script turns your verdicts into an update of that section:
 
-1. After a run, open output/tracker.csv and rate the jobs you reviewed in `my_verdict`:
-   High (apply now), Medium (maybe) or Pass. Add a few words in `my_note` when you can: why.
+1. After a run, rate the jobs: `python review.py` opens a page with one button per verdict,
+   High (apply now), Medium (maybe) or Pass, and a box for a few words on why. (Or edit
+   `my_verdict` and `my_note` in output/tracker.csv by hand.)
 2. Run: python learn.py
    Claude compares its recommendations with your verdicts, finds the patterns (what you keep
    choosing, what you always pass on, where it over- or under-rated), and writes a proposal to

@@ -1,6 +1,10 @@
 """
 Job boards read through their public APIs (Greenhouse, Lever, Ashby, Gem).
 
+The agent searches by ROLE first (web search for your target titles on these ATS domains and on the
+job sites you choose); when it finds a posting on one of them, it reads that company's whole board here.
+Your own list of companies is a complement, not the main source.
+
 Any other careers page can be added as a "page": the agent reads it with WebFetch on every run
 instead of through an API (slower and less exact, but it works for any site).
 
@@ -30,6 +34,9 @@ ATS_PATTERNS = {
     "ashby": re.compile(r"jobs\.ashbyhq\.com/([\w.-]+)", re.I),
     "gem": re.compile(r"jobs\.gem\.com/([\w-]+)", re.I),
 }
+
+# Where the agent looks when it searches by role (site: queries). All have public APIs above.
+ATS_DOMAINS = ["job-boards.greenhouse.io", "boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com", "jobs.gem.com"]
 
 
 def detect_ats(url: str) -> tuple[str, str] | None:
@@ -172,6 +179,16 @@ def scan(key: str, sources: dict, filters: Filters) -> tuple[int, list[dict]]:
     passed = [dict(j, company=key) for j in every if filters.passes(j)]
     passed.sort(key=lambda j: j["date"], reverse=True)
     return len(every), passed
+
+
+def source_from_link(url: str) -> tuple[str, dict] | None:
+    """A job link found while searching by role -> (key, source entry) for that company's whole board.
+    'https://jobs.lever.co/kavak/123' -> ('kavak', {"system": "lever", "slug": "kavak"})."""
+    found = detect_ats(url)
+    if not found:
+        return None
+    system, slug = found
+    return slug.lower(), {"system": system, "slug": slug, "url": url}
 
 
 if __name__ == "__main__":
