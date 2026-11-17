@@ -1,0 +1,11 @@
+# Your keys and your data never go to git
+.env
+.env.*
+profile/
+output/
+logs/
+.claude-agent/
+
+# Python
+.venv/
+__pycache__/

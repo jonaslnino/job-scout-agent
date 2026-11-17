@@ -1,0 +1,23 @@
+{
+  "ANTHROPIC_API_KEY": "sk-ant-...",
+  "language": "English",
+  "summary": "Growth & Operations leader, 10 years in two-sided marketplaces, led teams of 6.",
+  "target_roles": ["Head of Operations", "Senior Manager Marketplace", "Head of Growth", "Product Lead"],
+  "level": "Senior Manager or above, leading a team. Too junior: asks for 5 years or less.",
+  "locations": ["Bogotá", "Colombia"],
+  "remote_ok": true,
+  "remote_excluded_regions": ["US", "USA", "United States", "UK", "EMEA", "Europe"],
+  "relocation": ["Madrid"],
+  "min_comp": "US$90k/year base",
+  "languages": ["Spanish", "English"],
+  "hard_blockers": ["sales roles with a quota", "pure engineering roles"],
+  "no_signals": ["account management", "FP&A as the main function"],
+  "magnets": ["fintech", "building with AI", "owning a P&L"],
+  "title_excluded": ["intern", "analyst", "associate", "engineer", "developer", "designer", "recruiter"],
+  "cv_path": "",
+  "companies": {
+    "rappi": {"system": "lever", "slug": "rappi", "priority": "high"},
+    "stripe": {"system": "greenhouse", "slug": "stripe", "priority": "medium"},
+    "openai": {"system": "ashby", "slug": "openai", "priority": "medium"}
+  }
+}
