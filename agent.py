@@ -97,6 +97,7 @@ LINKEDIN_WINDOW = "pastWeek"
 BOARDS_CAP = int(SETTINGS.get("board_jobs_cap", 30))        # max board jobs sent to the model per run
 WEBSEARCH_CAP = int(SETTINGS.get("role_searches", 10))       # web searches by role: the main way to find jobs
 WEBFETCH_EXTRA = 8         # pages read with WebFetch beyond your own list of careers pages
+ROLE_FIRST = min(WEBSEARCH_CAP, int(SETTINGS.get("role_searches_first", 6)))  # searches before their own list
 MAX_PER_COMPANY = 3        # jobs per company sent to the model: keeps the run about roles, not a few companies
 DISCOVERED_PATH = output.OUTPUT / "discovered.json"
 
@@ -121,7 +122,13 @@ SKIP_SEEN = True
 
 state = {"linkedin_jobs": 0, "apify_runs": 0, "apify_usd": 0.0, "linkedin_raw": [],
          "WebSearch": 0, "WebFetch": 0, "web_blocked": 0, "board_jobs": 0, "boards_scanned": [],
-         "board_raw": {}, "already_seen": 0, "delivered": [], "discovered": {}}
+         "board_raw": {}, "already_seen": 0, "delivered": [], "discovered": {}, "role_first": 0}
+
+
+def role_searches_pending() -> int:
+    """How many role searches are still due before the agent may use the person's own list or finish.
+    Enforced in code because the model, left alone, starts with the familiar names on the list."""
+    return max(0, state["role_first"] - state["WebSearch"])
 
 
 def log(tag: str, text: str = "") -> None:
@@ -212,7 +219,11 @@ async def search_linkedin(args: dict) -> dict:
 async def scan_board(args: dict) -> dict:
     ref = args["board"].strip()
     run_sources = dict(SOURCES)
-    if "/" in ref:  # a link found while searching by role
+    link = ref if "/" in ref else ""
+    if not link and role_searches_pending():
+        return text_result(f"Search by role first: do {role_searches_pending()} more WebSearch queries for the target "
+                           f"roles, and scan the companies you find, before using their own list.", True)
+    if link:  # a link found while searching by role
         found = boards.source_from_link(ref)
         if not found:
             return text_result("That link is not on Greenhouse, Lever, Ashby or Gem. Read it with WebFetch "
@@ -232,7 +243,7 @@ async def scan_board(args: dict) -> dict:
     if left <= 0:
         return text_result(f"Board budget used up ({BOARDS_CAP}). Work with what you have.", True)
     try:
-        total, passed = await asyncio.to_thread(boards.scan, key, run_sources, FILTERS)
+        total, passed = await asyncio.to_thread(boards.scan, key, run_sources, FILTERS, link)
     except Exception as e:
         return text_result(f"Error reading {key}: {type(e).__name__}: {e}", True)
 
@@ -251,6 +262,7 @@ async def scan_board(args: dict) -> dict:
         state["board_raw"][jid] = j
         state["delivered"].append((j["company"], j["title"], j["link"], f"board {key}"))
         compact.append({"id": jid, "title": j["title"], "company": key, "location": j["location"],
+                        **({"found_by_your_search": True} if j.get("found_by_search") else {}),
                         "remote": j["remote"], "posted": j["date"], "link": j["link"],
                         "description": clip(j["description"], 600)})
     log("   🗂️  BOARD", f"{key}: {total} jobs → {len(passed)} pass filters → {len(passed) - len(new)} already seen "
@@ -322,6 +334,10 @@ def validate(text: str) -> tuple[list | None, str]:
     {"jobs_json": str},
 )
 async def save_results(args: dict) -> dict:
+    pending = role_searches_pending()
+    if pending:
+        return text_result(f"Nothing saved. Do {pending} more role searches first (WebSearch for the target roles, "
+                           f"then scan_board on the job board links you find), then call save_results again.", True)
     jobs, error = validate(args.get("jobs_json", ""))
     if error:
         return text_result(f"Nothing saved. {error}", True)
@@ -375,8 +391,27 @@ WEBFETCH_CAP = WEBFETCH_EXTRA + len(PAGES)
 WEB_CAPS = {"WebSearch": WEBSEARCH_CAP, "WebFetch": WEBFETCH_CAP}
 
 
+def deny(reason: str) -> dict:
+    state["web_blocked"] += 1
+    log("   🚧 HOOK", reason)
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+PAGE_URLS = {v["url"].rstrip("/").lower() for v in PAGES.values()}
+
+
 async def cap_web(entry: dict, tool_use_id, context) -> dict:
     name = entry["tool_name"]
+    if name == "WebFetch":
+        url = str((entry.get("tool_input") or {}).get("url", ""))
+        if boards.detect_ats(url):
+            # A job board with an API: scan_board reads the whole company for free and registers it.
+            return deny("That link is on a job board with an API. Call scan_board with this link instead: it reads "
+                        "this posting and the company's other jobs, and lets read_job give you the full text.")
+        if url.rstrip("/").lower() in PAGE_URLS and role_searches_pending():
+            return deny(f"Search by role first: {role_searches_pending()} more WebSearch queries before reading "
+                        f"their own list of pages.")
     if state[name] >= WEB_CAPS[name]:
         state["web_blocked"] += 1
         log("   🚧 HOOK", f"{name} blocked: {WEB_CAPS[name]} already used")
@@ -397,11 +432,12 @@ def sources_block(use_linkedin: bool, use_boards: bool) -> str:
         sites = " OR ".join(f"site:{d}" for d in boards.ATS_DOMAINS)
         parts.append(
             f"- WebSearch, by ROLE: your MAIN source. The point is to find roles across many companies, including\n"
-            f"  ones the person has never heard of. Max {WEBSEARCH_CAP} searches. Build each one from a target role\n"
+            f"  ones the person has never heard of. Max {WEBSEARCH_CAP} searches; do at least {ROLE_FIRST} before\n"
+            f"  touching their own list (the tools refuse until then), and use the rest if results are thin. Build each one from a target role\n"
             f"  (or a close synonym) plus a location or 'remote', restricted to public job boards, e.g.\n"
             f"  \"<role>\" \"<city, country or remote>\" ({sites}). Vary roles and places across searches.\n"
-            f"- scan_board: when a search result is a posting on Greenhouse, Lever, Ashby or Gem, pass its link to\n"
-            f"  read that company's whole board, already filtered. Budget: {BOARDS_CAP} jobs, at most\n"
+            f"- scan_board: whenever a search result is a posting on Greenhouse, Lever, Ashby or Gem, pass its link\n"
+            f"  (never WebFetch it: that is blocked). It returns that posting plus the company's other matching jobs. Budget: {BOARDS_CAP} jobs, at most\n"
             f"  {MAX_PER_COMPANY} per company. Spread the budget across many companies rather than a few.")
     if use_linkedin:
         parts.append(f"- search_linkedin: LinkedIn jobs via Apify, last week only. Use the role searches from the "
@@ -483,6 +519,7 @@ async def run(use_linkedin: bool, use_boards: bool) -> None:
         cwd=str(FOLDER),
         env=AGENT_ENV,
     )
+    state["role_first"] = ROLE_FIRST if use_boards else 0
     log(f"# Run {STAMP} · linkedin={use_linkedin} · boards={use_boards} · model={MODEL}")
     SEEN.add_rows(output.read_tracker())
     turn = 0

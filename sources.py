@@ -29,6 +29,8 @@ FILTERS_PATH = FOLDER / "profile" / "filters.json"
 
 # URL patterns used by onboarding to detect a company's ATS from its careers link.
 ATS_PATTERNS = {
+    # EU-hosted boards (job-boards.eu.greenhouse.io) have their own API host: check them first.
+    "greenhouse_eu": re.compile(r"\beu\.greenhouse\.io/(?:embed/job_board\?for=)?([\w-]+)", re.I),
     "greenhouse": re.compile(r"greenhouse\.io/(?:embed/job_board\?for=)?([\w-]+)", re.I),
     "lever": re.compile(r"jobs\.lever\.co/([\w-]+)", re.I),
     "ashby": re.compile(r"jobs\.ashbyhq\.com/([\w.-]+)", re.I),
@@ -36,7 +38,7 @@ ATS_PATTERNS = {
 }
 
 # Where the agent looks when it searches by role (site: queries). All have public APIs above.
-ATS_DOMAINS = ["job-boards.greenhouse.io", "boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com", "jobs.gem.com"]
+ATS_DOMAINS = ["job-boards.greenhouse.io", "boards.greenhouse.io", "job-boards.eu.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com", "jobs.gem.com"]
 
 
 def detect_ats(url: str) -> tuple[str, str] | None:
@@ -131,8 +133,8 @@ def _date(value) -> str:
 
 # ── One reader per system; all return the same shape. ────────────────────────
 
-def _greenhouse(slug):
-    for j in _get_json(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true")["jobs"]:
+def _greenhouse(slug, host="boards-api.greenhouse.io"):
+    for j in _get_json(f"https://{host}/v1/boards/{slug}/jobs?content=true")["jobs"]:
         yield {"title": j["title"], "location": (j.get("location") or {}).get("name", ""), "remote": False,
                "date": _date(j.get("first_published") or j.get("updated_at")),
                "link": j["absolute_url"], "description": _plain(j.get("content"))}
@@ -169,16 +171,30 @@ def _gem(slug):
                "description": unescape(j.get("content_plain") or "") or _plain(j.get("content"))}
 
 
-READERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever, "gem": _gem}
+def _greenhouse_eu(slug):
+    return _greenhouse(slug, "boards-api.eu.greenhouse.io")
 
 
-def scan(key: str, sources: dict, filters: Filters) -> tuple[int, list[dict]]:
-    """Returns (total jobs on the board, jobs that pass the filter, newest first)."""
+READERS = {"greenhouse": _greenhouse, "greenhouse_eu": _greenhouse_eu, "ashby": _ashby, "lever": _lever, "gem": _gem}
+
+
+def _job_id(link: str) -> str:
+    """Last segment of a posting's path: the job id on every supported ATS."""
+    path = (link or "").split("?")[0].split("#")[0].rstrip("/")
+    return path.rsplit("/", 1)[-1].lower()
+
+
+def scan(key: str, sources: dict, filters: Filters, keep_link: str = "") -> tuple[int, list[dict]]:
+    """Returns (total jobs on the board, jobs that pass the filter, newest first).
+    keep_link: a posting the agent found by searching; it is kept (first) even if the regex filter
+    would drop it, because the agent already judged it relevant."""
     src = sources[key]
     every = list(READERS[src["system"]](src["slug"]))
-    passed = [dict(j, company=key) for j in every if filters.passes(j)]
+    wanted = _job_id(keep_link) if keep_link else ""
+    kept = [dict(j, company=key, found_by_search=True) for j in every if wanted and _job_id(j["link"]) == wanted]
+    passed = [dict(j, company=key) for j in every if filters.passes(j) and not (kept and j["link"] == kept[0]["link"])]
     passed.sort(key=lambda j: j["date"], reverse=True)
-    return len(every), passed
+    return len(every), kept[:1] + passed
 
 
 def source_from_link(url: str) -> tuple[str, dict] | None:
