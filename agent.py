@@ -122,7 +122,7 @@ SKIP_SEEN = True
 
 state = {"linkedin_jobs": 0, "apify_runs": 0, "apify_usd": 0.0, "linkedin_raw": [],
          "WebSearch": 0, "WebFetch": 0, "web_blocked": 0, "board_jobs": 0, "boards_scanned": [],
-         "board_raw": {}, "already_seen": 0, "delivered": [], "discovered": {}, "role_first": 0}
+         "board_raw": {}, "already_seen": 0, "delivered": [], "discovered": {}, "role_first": 0, "read": set()}
 
 
 def role_searches_pending() -> int:
@@ -280,6 +280,7 @@ async def scan_board(args: dict) -> dict:
 )
 async def read_job(args: dict) -> dict:
     jid = args["id"].strip().upper()
+    state["read"].add(jid)
     if jid in state["board_raw"]:
         j = state["board_raw"][jid]
         text = f"{j['title']} — {j['company']} — {j['location']} — posted {j['date']}\n{j['link']}\n\n{j['description']}"
@@ -341,6 +342,12 @@ async def save_results(args: dict) -> dict:
     jobs, error = validate(args.get("jobs_json", ""))
     if error:
         return text_result(f"Nothing saved. {error}", True)
+    # Honesty rule, enforced: a job is only evaluated after reading its full posting.
+    unread = [str(j["id"]).upper() for j in jobs if j["show"] and str(j["id"]).upper()[:3] in ("WEB", "LI-")
+              and str(j["id"]).upper() not in state["read"]]
+    if unread:
+        return text_result(f"Nothing saved. Read the full posting with read_job before evaluating: {', '.join(unread)}. "
+                           f"Then call save_results again.", True)
     today = datetime.now().strftime("%Y-%m-%d")
     shown = [j for j in jobs if j["show"] and not (SKIP_SEEN and SEEN.seen(j["company"], j["title"], j["link"]))]
     hidden = [j for j in jobs if not j["show"]]
@@ -437,7 +444,9 @@ def sources_block(use_linkedin: bool, use_boards: bool) -> str:
             f"  (or a close synonym) plus a location or 'remote', restricted to public job boards, e.g.\n"
             f"  \"<role>\" \"<city, country or remote>\" ({sites}). Vary roles and places across searches.\n"
             f"- scan_board: whenever a search result is a posting on Greenhouse, Lever, Ashby or Gem, pass its link\n"
-            f"  (never WebFetch it: that is blocked). It returns that posting plus the company's other matching jobs. Budget: {BOARDS_CAP} jobs, at most\n"
+            f"  (never WebFetch it: that is blocked). It returns that posting plus the company's other matching jobs.\n"
+            f"  Pass EVERY relevant posting link from your search results, one company each: discovering companies\n"
+            f"  is the point, so aim for at least 4 different companies found this way. Budget: {BOARDS_CAP} jobs, at most\n"
             f"  {MAX_PER_COMPANY} per company. Spread the budget across many companies rather than a few.")
     if use_linkedin:
         parts.append(f"- search_linkedin: LinkedIn jobs via Apify, last week only. Use the role searches from the "

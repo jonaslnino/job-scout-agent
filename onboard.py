@@ -108,7 +108,7 @@ def setup_keys(answers: dict, interactive: bool) -> dict:
         print("\n── Step 1 of 3 · Keys ──")
         print("Anthropic (required): the model that reads and scores every job.")
         print("  Get a key at https://console.anthropic.com → Settings → API keys.")
-        print("  A typical run costs around US$0.40. You can cap it in profile/settings.json (max_spend_usd).")
+        print("  A typical run costs around US$0.30. You can cap it in profile/settings.json (max_spend_usd).")
         current = env.get("ANTHROPIC_API_KEY", "")
         key = input(f"  ANTHROPIC_API_KEY{' [keep current]' if current else ''} > ").strip() or current
         while not key.startswith("sk-ant-"):

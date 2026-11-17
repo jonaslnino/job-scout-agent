@@ -4,7 +4,13 @@ An AI agent that searches for the roles you want across many companies, reads ev
 
 I built it for my own job search in October 2026 with the [Claude Agent SDK](https://docs.claude.com/en/docs/agent-sdk/overview), measured it against my own verdicts on real postings, and then made it generic so anyone can clone it, answer a few questions and run it.
 
-A typical run reviews 30 to 40 postings and costs well under **US$1** (about US$0.20 before role search was added; the web searches add roughly US$0.02 each). A hard cap stops any run at US$1.50.
+A typical run reviews about 40 postings across a dozen companies and costs around **US$0.30**. A hard cap stops any run at US$1.50.
+
+## What you get
+
+A short list in a report ([sample, with fictional companies](examples/sample-report.md)) and a page on your own machine to rate each job with one click. Your ratings are what it learns from.
+
+![The rating page: one card per job with the agent's recommendation, fit and interest scores, reasons, gaps and tradeoff, plus High / Medium / Pass buttons and a note box](docs/review.png)
 
 ## Why
 
@@ -21,7 +27,7 @@ No terminal and no coding. You need [Claude Code](https://docs.claude.com/en/doc
 3. **Say: "Set this up for me."** Claude follows [CLAUDE.md](CLAUDE.md) one step at a time: it installs what's needed, then helps you get an API key if you don't have one.
 4. **Paste your API key when Claude asks.** It creates a `.env` file for you to paste the key into, so the key never goes through the chat.
 5. **Talk about your search.** One question at a time: the roles you want, level, where you can work, pay, what you never want to see. When an answer is vague, Claude asks until it's precise. If you have postings you'd love, share them: they calibrate the agent.
-6. **Run and rate.** Claude turns your CV into plain text and asks for your OK before the first paid run (under US$1, with a hard cap). Then it opens a page where you rate each job with one click.
+6. **Run and rate.** Claude turns your CV into plain text and asks for your OK before the first paid run (around US$0.30, with a hard cap). Then it opens a page where you rate each job with one click.
 
 ## Quick start (terminal)
 
@@ -131,7 +137,7 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 
 ## Cost and limits
 
-- Before role search, a run cost about US$0.18 of Anthropic and US$0.02 of Apify. Each role search adds roughly US$0.02 (US$0.01 for the search plus the tokens of its results), so with the default 10 searches expect around US$0.40. Every posting the model reads costs tokens, whatever the source. Anthropic API usage is paid with prepaid credits in the Claude Console, separate from a Claude subscription; Max, Ultra and Team plans include monthly API credits you can link to it. `max_spend_usd` in `profile/settings.json` caps the model spend per run (default US$1.50).
+- A measured run (November 2026, Claude Sonnet 5.5): 6 role searches, 3 company boards, 16 LinkedIn postings, about 40 postings reviewed and 11 shown, for US$0.28 of Anthropic and under US$0.01 of Apify, in under two minutes. Every posting the model reads costs tokens, whatever the source. Anthropic API usage is paid with prepaid credits in the Claude Console, separate from a Claude subscription; Max, Ultra and Team plans include monthly API credits you can link to it. `max_spend_usd` in `profile/settings.json` caps the model spend per run (default US$1.50).
 - Role search uses up to 10 web searches per run (`role_searches`) and sends at most 30 board postings to the model (`board_jobs_cap`), both in `profile/settings.json`.
 - LinkedIn search looks at the last week and is capped at 20 postings per run (`linkedin_cap`).
 - Careers pages without an API are read with WebFetch on every run: it works for any site, but it is slower and spends a few more tokens than a job board API.
@@ -150,7 +156,7 @@ v3 and v4 were measured on 12 postings I had judged; v5 on the 10 I judged from 
 | `review.py` | A page on your machine to rate jobs with one click |
 | `learn.py` | Turns your ratings into proposed updates to your criteria |
 | `measure.py` | Catch rate and noise from your verdicts |
-| `examples/` | A sample answers file for non-interactive setup |
+| `examples/` | A sample report and a sample answers file for non-interactive setup |
 
 ## License
 

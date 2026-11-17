@@ -105,7 +105,7 @@ It's fine to finish with an empty list.
   many pass their filters. If one shows 0 passing, offer to loosen `profile/filters.json`.
 
 ### 8. First run
-Ask for a clear OK before running, because it spends their credits (around US$0.40, capped by
+Ask for a clear OK before running, because it spends their credits (around US$0.30, capped by
 `max_spend_usd` in `profile/settings.json`). Then run `<venv-python> agent.py` (or `--sources web` if they
 have no Apify token). It takes 3 to 5 minutes. When it ends, read the newest `output/report-*.md` and give them
 the top 3 with one line each.
