@@ -15,7 +15,7 @@ SEEN_PATH = FOLDER / "output" / "seen.json"
 
 
 def _normalize(text: str | None) -> str:
-    """'Sr. Manager, Strategy — Méx' -> 'sr manager strategy mex'."""
+    """'Sr. Manager, Strategy (Méx)' -> 'sr manager strategy mex'."""
     t = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode().lower()
     return " ".join(re.sub(r"[^a-z0-9]+", " ", t).split())
 

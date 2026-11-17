@@ -37,21 +37,21 @@ DEFAULT_TITLE_EXCLUDED = ["intern", "internship", "trainee", "analyst", "associa
 QUESTIONS = [
     ("language", "In which language should the agent write its reports?", "", "English", "text"),
     ("summary", "Describe yourself in one line, the way you'd open a cover letter.",
-     "e.g. 'Strategy & Operations leader, 12+ years in marketplaces, led teams of 8, P&L across 7 countries.'",
+     "e.g. 'Product manager, 8 years in B2B SaaS, led a team of 5 across two countries.'",
      "", "text"),
     ("target_roles", "Which job titles are you after? (comma-separated)",
-     "e.g. Head of Strategy & Operations, Senior Manager Marketplace, Product Lead. These drive the search: the "
+     "e.g. Senior Product Manager, Head of Product, Group Product Manager. These drive the search: the "
      "agent looks for these roles across many companies, not only the ones you list.",
      "", "list"),
     ("level", "What's the minimum level you'd take, and what feels too junior?",
      "e.g. 'Senior Manager or above, leading a team. Too junior: asks for 5 years or less.'", "", "text"),
     ("locations", "Where can you work on-site or hybrid? (cities or countries, comma-separated)",
-     "e.g. Mexico City, Mexico. Leave empty if you only want remote.", "", "list"),
+     "e.g. Madrid, Spain. Leave empty if you only want remote.", "", "list"),
     ("remote_ok", "Are fully remote roles OK?", "", "yes", "yesno"),
     ("remote_excluded_regions", "Remote roles restricted to which regions DON'T work for you? (comma-separated)",
      "Many 'remote' roles are remote only inside the US or the EU. e.g. US, USA, United States, Canada, EMEA",
      "US, USA, United States, UK, EMEA, Europe", "list"),
-    ("relocation", "Would you relocate? Where to? (comma-separated, empty if not)", "e.g. Tokyo, Toronto", "", "list"),
+    ("relocation", "Would you relocate? Where to? (comma-separated, empty if not)", "e.g. Lisbon, Berlin", "", "list"),
     ("min_comp", "What's your minimum compensation?", "e.g. 'US$100k/year base' or '€70k/year gross'", "", "text"),
     ("languages", "Which languages do you speak at business level? (comma-separated)", "", "English", "list"),
     ("hard_blockers", "Hard blockers: what should NEVER be shown to you? (comma-separated)",
@@ -59,7 +59,7 @@ QUESTIONS = [
     ("no_signals", "Soft 'no' signals: what lowers your interest but could be outweighed? (comma-separated)",
      "e.g. account management, FP&A as the main function, internal operations", "", "list"),
     ("magnets", "Magnets: what makes you want to see a job anyway? (comma-separated)",
-     "e.g. companies you admire, relocation to Tokyo, building with AI, owning a P&L", "", "list"),
+     "e.g. companies you admire, a move abroad, building with AI, owning a P&L", "", "list"),
     ("title_excluded", "Title words that mean 'skip without reading'? (comma-separated)",
      "Applied by a free regex before the model sees anything.", ", ".join(DEFAULT_TITLE_EXCLUDED), "list"),
     ("example_jobs", "Do you have 1 to 3 job postings you'd love? Paste links or 'title at company' (comma-separated, "
@@ -282,7 +282,7 @@ GENERIC_TITLE_WORDS = {"senior", "junior", "manager", "head", "lead", "director"
 
 
 def title_keywords(roles: list[str]) -> list[str]:
-    """'Head of Strategy & Operations' -> ['strateg', 'operations', ...]: the words that make a title relevant.
+    """'Head of Product Operations' -> ['product', 'operations', ...]: the words that make a title relevant.
     Seniority words are left out (they appear everywhere) and added back as phrases."""
     words = []
     for role in roles:
